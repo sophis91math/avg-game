@@ -9,6 +9,11 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap" rel="stylesheet">
 
     <style>
         @font-face {
@@ -16,7 +21,7 @@
             src: url('https://fastly.jsdelivr.net/gh/Project-Noonnu/noonfonts_2107@1.1/Pretendard-Regular.woff') format('woff');
             font-weight: 400;
         }
-        body { font-family: 'Pretendard-Regular', sans-serif; background-color: #f8fafc; color: #0f172a; }
+        body { font-family: 'Pretendard', 'Pretendard-Regular', sans-serif; background-color: #f8fafc; color: #0f172a; }
         .fade-in { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
         ::-webkit-scrollbar { width: 8px; }
@@ -25,6 +30,119 @@
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         
         .calc-btn:active { transform: scale(0.95); }
+
+
+        /* ===== 결과 공개 카운트다운 ===== */
+        .countdown-overlay {
+            position: fixed; inset: 0; z-index: 90;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: rgba(15, 23, 42, .88);
+            backdrop-filter: blur(4px);
+            animation: fadeIn .25s ease-out;
+        }
+        .countdown-label { color: #ffe36e; font-size: clamp(1.5rem, 4vw, 2.5rem); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 1rem; }
+        .countdown-num {
+            color: #fff; font-weight: 900; line-height: 1;
+            font-size: clamp(10rem, 38vw, 22rem);
+            text-shadow: 0 10px 40px rgba(37, 84, 199, .6);
+            animation: countPop 1s ease-out both;
+        }
+        @keyframes countPop {
+            0%   { transform: scale(1.8); opacity: 0; }
+            20%  { transform: scale(1);   opacity: 1; }
+            80%  { transform: scale(.92); opacity: 1; }
+            100% { transform: scale(.6);  opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) { .countdown-num { animation: none; } }
+
+        /* ===== 첫 화면: 수학 교실 테마 ===== */
+        :root {
+            --paper: #fbf8f1;
+            --grid: rgba(37, 84, 199, 0.08);
+            --grid-strong: rgba(37, 84, 199, 0.16);
+            --ink: #1e2a44;
+            --blue-ink: #2554c7;
+            --red-pen: #d9473b;
+            --highlight: #ffe36e;
+        }
+        .main-stage { flex-grow: 1; display: flex; flex-direction: column; position: relative; }
+        .grid-bg {
+            position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+            background-color: var(--paper);
+            background-image:
+                linear-gradient(var(--grid-strong) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-strong) 1px, transparent 1px),
+                linear-gradient(var(--grid) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+            background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+        }
+        .fnum {
+            position: absolute; top: 0;
+            font-family: 'Nanum Pen Script', cursive;
+            line-height: 1; user-select: none;
+            animation: floatUp linear infinite;
+            will-change: transform;
+        }
+        @keyframes floatUp {
+            from { transform: translateY(105vh) rotate(-10deg); }
+            to   { transform: translateY(-15vh) rotate(10deg); }
+        }
+        @media (max-width: 640px) { .fnum:nth-child(n+15) { display: none; } }
+        @media (prefers-reduced-motion: reduce) {
+            .fnum { animation: none; top: var(--y); }
+        }
+        .paper-card {
+            position: relative; z-index: 10;
+            width: 100%; max-width: 30rem;
+            background: #ffffff;
+            border-radius: 6px;
+            padding: 3rem 3rem 2.5rem 3.25rem;
+            text-align: center;
+            box-shadow: 0 1px 0 rgba(30,42,68,.06), 0 24px 48px -12px rgba(30,42,68,.22);
+        }
+        .paper-card::before {
+            content: ""; position: absolute; top: 0; bottom: 0; left: 1.75rem;
+            width: 2px; background: rgba(217, 71, 59, .45);
+        }
+        .tape {
+            position: absolute; top: -14px; left: 50%;
+            width: 120px; height: 30px;
+            transform: translateX(-50%) rotate(-3deg);
+            background: rgba(255, 227, 110, .75);
+            box-shadow: 0 1px 2px rgba(0,0,0,.08);
+        }
+        .hand-note {
+            font-family: 'Nanum Pen Script', cursive;
+            color: var(--red-pen); font-size: 1.9rem; line-height: 1;
+            transform: rotate(-4deg); display: inline-block; margin-bottom: .5rem;
+        }
+        .main-title {
+            color: var(--ink); font-weight: 800; letter-spacing: -0.03em;
+            font-size: clamp(2.25rem, 7vw, 3rem); line-height: 1.15; word-break: keep-all;
+        }
+        .hl { background: linear-gradient(transparent 55%, var(--highlight) 55%, var(--highlight) 92%, transparent 92%); padding: 0 .1em; }
+        .formula { color: #5b6478; font-size: 1.15rem; margin: 1.1rem 0 1rem; }
+        .rule-chip {
+            display: inline-flex; align-items: center; gap: .5rem;
+            margin-bottom: 2.25rem; padding: .45rem .9rem;
+            border: 2px dashed rgba(217, 71, 59, .55); border-radius: 10px;
+            color: var(--ink); font-size: 1.05rem; font-weight: 700;
+            background: rgba(217, 71, 59, .05);
+        }
+        .rule-num { font-family: 'Nanum Pen Script', cursive; color: var(--red-pen); font-size: 1.6rem; line-height: 1; font-weight: 400; }
+        .btn-main {
+            display: flex; align-items: center; justify-content: center; gap: .75rem;
+            width: 100%; padding: 1.1rem 1rem; border-radius: 14px;
+            font-size: 1.25rem; font-weight: 800;
+            transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
+        }
+        .btn-main:hover { transform: translateY(-2px); }
+        .btn-main:active { transform: translateY(0); }
+        .btn-main:focus-visible { outline: 3px solid var(--highlight); outline-offset: 3px; }
+        .btn-teacher { background: #fff; color: var(--ink); border: 2px solid var(--ink); box-shadow: 0 4px 0 var(--ink); }
+        .btn-teacher:hover { background: #f4f6fb; }
+        .btn-student { background: var(--blue-ink); color: #fff; border: 2px solid var(--blue-ink); box-shadow: 0 4px 0 #173a94; }
+        .btn-student:hover { background: #1f49b3; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -303,7 +421,7 @@
             if (!currentUser) return showToast("인증이 필요합니다.", true);
 
             const pw = document.getElementById('pwInput').value;
-            if (pw === '2026') {
+            if (pw === '15431') {
                 closePwModal();
                 
                 showToast("방을 생성하는 중입니다...");
@@ -397,10 +515,48 @@
             }
         };
 
+        // 결과 공개: 5→1 카운트다운 후 공개 + 폭죽
+        let isCountingDown = false;
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+        function fireConfetti() {
+            if (typeof window.confetti !== 'function') return;
+            const colors = ['#2554c7', '#d9473b', '#ffe36e', '#2f7d5b', '#ffffff'];
+            const base = { colors, disableForReducedMotion: true, zIndex: 100 };
+            // 가운데 큰 폭발
+            window.confetti({ ...base, particleCount: 160, spread: 100, startVelocity: 55, origin: { x: 0.5, y: 0.55 } });
+            // 양옆에서 2.5초 동안 연속 발사
+            const end = Date.now() + 2500;
+            (function frame() {
+                window.confetti({ ...base, particleCount: 6, angle: 60, spread: 60, origin: { x: 0, y: 0.7 } });
+                window.confetti({ ...base, particleCount: 6, angle: 120, spread: 60, origin: { x: 1, y: 0.7 } });
+                if (Date.now() < end) requestAnimationFrame(frame);
+            })();
+        }
+
         window.handleRevealResults = async () => {
-            if (!currentUser || !currentPin) return;
-            await setDoc(getRoomDocRef(currentPin), { ...globalGameState, phase: 'revealed' }, { merge: true });
-            showToast("결과가 학생 화면에 공개되었습니다.");
+            if (!currentUser || !currentPin || isCountingDown) return;
+            isCountingDown = true;
+
+            const overlay = document.createElement('div');
+            overlay.className = 'countdown-overlay';
+            document.body.appendChild(overlay);
+            try {
+                for (let n = 5; n >= 1; n--) {
+                    overlay.innerHTML = `<div class="countdown-label">결과 공개까지</div><div class="countdown-num" key="${n}">${n}</div>`;
+                    await sleep(1000);
+                }
+                overlay.remove();
+                await setDoc(getRoomDocRef(currentPin), { ...globalGameState, phase: 'revealed' }, { merge: true });
+                fireConfetti();
+                showToast("결과가 학생 화면에 공개되었습니다.");
+            } catch (err) {
+                console.error(err);
+                overlay.remove();
+                showToast("결과 공개 중 오류가 발생했습니다.", true);
+            } finally {
+                isCountingDown = false;
+            }
         };
 
         window.handleNextRound = async () => {
@@ -532,22 +688,51 @@
             `;
         }
 
+        // 떠다니는 숫자 배경 (한 번만 만들어 재사용)
+        let floatingNumbersHTML = null;
+        function getFloatingNumbers() {
+            if (floatingNumbersHTML) return floatingNumbersHTML;
+            const colors = ['#1e2a44', '#2554c7', '#d9473b', '#2f7d5b'];
+            const items = [];
+            const count = 26;
+            for (let i = 0; i < count; i++) {
+                const n = Math.floor(Math.random() * 101);
+                const left = (i / count) * 100 + Math.random() * (100 / count);
+                const size = 1.6 + Math.random() * 2.8;            // rem
+                const dur = 22 + Math.random() * 26;               // 초
+                const delay = -Math.random() * dur;                // 처음부터 화면 곳곳에 보이도록
+                const opacity = 0.14 + Math.random() * 0.18;
+                const color = colors[i % colors.length];
+                const y = Math.floor(Math.random() * 90);
+                items.push(`<span class="fnum" style="left:${left.toFixed(1)}%;font-size:${size.toFixed(2)}rem;color:${color};opacity:${opacity.toFixed(2)};animation-duration:${dur.toFixed(1)}s;animation-delay:${delay.toFixed(1)}s;--y:${y}%">${n}</span>`);
+            }
+            floatingNumbersHTML = items.join('');
+            return floatingNumbersHTML;
+        }
+
         function getMainView() {
             return `
-                <div class="flex-grow flex items-center justify-center fade-in">
-                    <div class="flex flex-col gap-6 w-full max-w-md bg-white p-10 rounded-3xl shadow-xl border border-gray-100">
-                        <div class="text-blue-500 text-5xl mb-2 text-center">🎯</div>
-                        <h1 class="text-4xl font-black text-center mb-8 text-gray-800 tracking-tight">평균 맞추기 게임</h1>
-                        
-                        <button onclick="openPwModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-5 rounded-2xl text-xl shadow-lg transition-transform transform hover:-translate-y-1 flex items-center justify-center gap-3">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
-                            교사용: 방 만들기
-                        </button>
-                        
-                        <button onclick="setMode('join')" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-5 rounded-2xl text-xl shadow-lg transition-transform transform hover:-translate-y-1 flex items-center justify-center gap-3">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
-                            학생용: 방 입장하기
-                        </button>
+                <div class="main-stage">
+                    <div class="grid-bg" aria-hidden="true">${getFloatingNumbers()}</div>
+                    <div class="flex-grow flex items-center justify-center fade-in py-8">
+                        <div class="paper-card">
+                            <div class="tape" aria-hidden="true"></div>
+                            <span class="hand-note">오늘의 미션!</span>
+                            <h1 class="main-title"><span class="hl">평균</span> 맞추기 게임</h1>
+                            <div class="formula">$\\bar{x} = \\dfrac{x_1 + x_2 + \\cdots + x_n}{n}$</div>
+                            <div class="rule-chip"><span class="rule-num">0 ~ 100</span> 사이 정수 입력</div>
+
+                            <div class="flex flex-col gap-4">
+                                <button onclick="openPwModal()" class="btn-main btn-teacher">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                                    교사용: 방 만들기
+                                </button>
+                                <button onclick="setMode('join')" class="btn-main btn-student">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+                                    학생용: 방 입장하기
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             `;
