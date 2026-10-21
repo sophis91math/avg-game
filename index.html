@@ -180,6 +180,16 @@
         </div>
     </div>
 
+    <!-- 중앙값 / 최빈값 창 -->
+    <div id="statModal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center hidden z-50 p-4 fade-in" onclick="if (event.target === this) closeStatModal()">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto p-6 sm:p-10 relative">
+            <button onclick="closeStatModal()" class="absolute top-5 right-5 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-full p-2 transition-colors" title="닫기">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <div id="statModalBody"></div>
+        </div>
+    </div>
+
     <script type="module">
         // ============================================================
         // ★ 1. 여기에 내 Firebase 프로젝트 설정값을 붙여넣으세요 ★
@@ -421,7 +431,7 @@
             if (!currentUser) return showToast("인증이 필요합니다.", true);
 
             const pw = document.getElementById('pwInput').value;
-            if (pw === '13579') {
+            if (pw === '15431') {
                 closePwModal();
                 
                 showToast("방을 생성하는 중입니다...");
@@ -580,6 +590,105 @@
             if (!currentUser || !currentPin) return;
             await setDoc(getRoomDocRef(currentPin), { ...globalGameState, mode: newMode }, { merge: true });
             showToast("게임 모드가 변경되었습니다.");
+        };
+
+        // ===== 중앙값 / 최빈값 =====
+        function getRoundValues() {
+            const round = globalGameState.round;
+            return allStudentsData
+                .map(s => (s.submissions || {})[round])
+                .filter(v => v !== undefined && v !== null)
+                .map(Number)
+                .sort((a, b) => a - b);
+        }
+        const fmt = (x) => Number.isInteger(x) ? String(x) : (Math.round(x * 10) / 10).toFixed(1);
+
+        function openStatModal(html) {
+            document.getElementById('statModalBody').innerHTML = html;
+            document.getElementById('statModal').classList.remove('hidden');
+        }
+        window.closeStatModal = () => document.getElementById('statModal').classList.add('hidden');
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.closeStatModal(); });
+
+        const emptyMsg = `<div class="text-center text-gray-400 text-2xl py-16">제출된 값이 없습니다.</div>`;
+
+        window.showMedian = () => {
+            const vals = getRoundValues();
+            const n = vals.length;
+            let body = '';
+            if (n === 0) {
+                body = emptyMsg;
+            } else {
+                const isOdd = n % 2 === 1;
+                const midIdx = isOdd ? [(n - 1) / 2] : [n / 2 - 1, n / 2];
+                const median = isOdd ? vals[midIdx[0]] : (vals[midIdx[0]] + vals[midIdx[1]]) / 2;
+
+                const chips = vals.map((v, i) => {
+                    const hit = midIdx.includes(i);
+                    return `
+                        <div class="flex flex-col items-center">
+                            <div class="${hit ? 'bg-orange-500 text-white border-orange-500 scale-110 shadow-lg' : 'bg-gray-50 text-gray-800 border-gray-200'} border-2 rounded-xl w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center text-2xl font-black transition-transform">${v}</div>
+                            <div class="text-xs mt-1 ${hit ? 'text-orange-600 font-bold' : 'text-gray-400'}">${i + 1}번째</div>
+                        </div>`;
+                }).join('');
+
+                const explain = isOdd
+                    ? `자료가 <b>${n}개(홀수)</b>이므로 한가운데인 <b>${midIdx[0] + 1}번째 값</b>이 중앙값이에요.`
+                    : `자료가 <b>${n}개(짝수)</b>이므로 가운데 두 값 <b>${midIdx[0] + 1}번째(${vals[midIdx[0]]})</b>와 <b>${midIdx[1] + 1}번째(${vals[midIdx[1]]})</b>의 평균이 중앙값이에요.`;
+                const calc = isOdd ? '' : `<div class="text-xl text-gray-600 mt-2">(${vals[midIdx[0]]} + ${vals[midIdx[1]]}) ÷ 2 = ${fmt(median)}</div>`;
+
+                body = `
+                    <p class="text-lg text-gray-500 mb-6">제출한 값을 <b>작은 값부터 큰 값</b> 순서로 나열했어요.</p>
+                    <div class="flex flex-wrap gap-3 justify-center mb-8">${chips}</div>
+                    <div class="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 text-center">
+                        <div class="text-lg text-gray-700 break-keep">${explain}</div>
+                        ${calc}
+                        <div class="mt-4 text-2xl font-bold text-gray-700">중앙값 = <span class="text-6xl font-black text-orange-600 align-middle">${fmt(median)}</span></div>
+                    </div>`;
+            }
+            openStatModal(`<h2 class="text-4xl font-black text-gray-800 mb-2">중앙값</h2>${body}`);
+        };
+
+        window.showMode = () => {
+            const vals = getRoundValues();
+            const n = vals.length;
+            let body = '';
+            if (n === 0) {
+                body = emptyMsg;
+            } else {
+                const counts = new Map();
+                vals.forEach(v => counts.set(v, (counts.get(v) || 0) + 1));
+                const entries = [...counts.entries()].sort((a, b) => a[0] - b[0]);
+                const maxCount = Math.max(...entries.map(e => e[1]));
+                const allSame = entries.length > 1 && entries.every(e => e[1] === maxCount);
+                const modes = allSame ? [] : entries.filter(e => e[1] === maxCount).map(e => e[0]);
+
+                const rows = entries.map(([v, c]) => {
+                    const hit = modes.includes(v);
+                    const dots = Array.from({ length: c }, () => `<span class="inline-block w-5 h-5 rounded-full ${hit ? 'bg-orange-500' : 'bg-blue-400'}"></span>`).join('');
+                    return `
+                        <tr class="${hit ? 'bg-orange-50' : ''}">
+                            <td class="py-2 pr-4 text-right text-2xl font-black ${hit ? 'text-orange-600' : 'text-gray-800'} w-20">${v}</td>
+                            <td class="py-2"><div class="flex flex-wrap gap-1.5">${dots}</div></td>
+                            <td class="py-2 pl-4 text-right text-xl font-bold ${hit ? 'text-orange-600' : 'text-gray-500'} w-20 whitespace-nowrap">${c}개</td>
+                        </tr>`;
+                }).join('');
+
+                let result = '';
+                if (allSame) {
+                    result = `<div class="text-2xl font-bold text-gray-700">모든 값이 똑같이 <b>${maxCount}개</b>씩 나왔어요.<br><span class="text-4xl font-black text-orange-600">최빈값이 없습니다</span></div>`;
+                } else {
+                    result = `
+                        <div class="text-lg text-gray-700">가장 많이 나온 값 <b>(${maxCount}개)</b></div>
+                        <div class="mt-2 text-2xl font-bold text-gray-700">최빈값 = <span class="text-6xl font-black text-orange-600 align-middle">${modes.join(', ')}</span></div>`;
+                }
+
+                body = `
+                    <p class="text-lg text-gray-500 mb-6">값을 <b>작은 값부터 큰 값</b> 순서로 놓고, 각 값이 나온 개수를 세었어요. (전체 ${n}개)</p>
+                    <table class="w-full mb-8 border-separate" style="border-spacing:0 4px"><tbody>${rows}</tbody></table>
+                    <div class="bg-orange-50 border-2 border-orange-200 rounded-2xl p-6 text-center">${result}</div>`;
+            }
+            openStatModal(`<h2 class="text-4xl font-black text-gray-800 mb-2">최빈값</h2>${body}`);
         };
 
         window.handleResetGame = () => {
@@ -1050,6 +1159,10 @@
                                 : `<button onclick="handleNextRound()" class="bg-green-500 hover:bg-green-600 text-white font-black py-3 px-6 rounded-xl text-lg shadow-lg flex items-center gap-2 transition-transform transform hover:scale-105">새 라운드 시작 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg></button>`
                             }
                             <button onclick="handleResetGame()" class="bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white font-bold py-3 px-4 rounded-xl text-base shadow-md transition-colors border border-slate-600 hover:border-red-500">초기화</button>
+                            ${isRevealed ? `
+                                <button onclick="showMedian()" class="bg-white hover:bg-orange-50 text-slate-900 font-black py-3 px-5 rounded-xl text-lg shadow-md transition-colors border-2 border-orange-300">중앙값</button>
+                                <button onclick="showMode()" class="bg-white hover:bg-orange-50 text-slate-900 font-black py-3 px-5 rounded-xl text-lg shadow-md transition-colors border-2 border-orange-300">최빈값</button>
+                            ` : ''}
                         </div>
                     </div>
                     ${boardHTML}
