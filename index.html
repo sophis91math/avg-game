@@ -55,6 +55,21 @@
         }
         @media (prefers-reduced-motion: reduce) { .countdown-num { animation: none; } }
 
+        /* ===== 형성평가 ===== */
+        .btn-quiz { background: var(--highlight); color: var(--ink); border: 2px solid var(--ink); box-shadow: 0 4px 0 var(--ink); }
+        .btn-quiz:hover { background: #ffd93d; }
+        .qcard { background: #fff; border-radius: 16px; padding: 1.5rem; box-shadow: 0 1px 0 rgba(30,42,68,.06), 0 12px 28px -14px rgba(30,42,68,.25); border-left: 5px solid var(--blue-ink); }
+        .qno { width: 2.25rem; height: 2.25rem; border-radius: 9999px; background: var(--ink); color: #fff; font-weight: 900; display: inline-flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+        .qtag { background: rgba(37,84,199,.1); color: var(--blue-ink); font-weight: 800; font-size: .85rem; padding: .2rem .65rem; border-radius: 9999px; }
+        .qchip { font-family: 'Nanum Pen Script', cursive; font-size: 2rem; line-height: 1; min-width: 3rem; padding: .35rem .6rem; text-align: center; background: #f6f3ea; border: 1.5px solid rgba(30,42,68,.12); border-radius: 10px; color: var(--ink); }
+        .qinput { padding: .85rem 1rem; border: 2px solid #cbd5e1; border-radius: 12px; font-size: 1.4rem; font-weight: 800; text-align: center; color: var(--blue-ink); background: #fff; }
+        .qinput:focus { outline: none; border-color: var(--blue-ink); box-shadow: 0 0 0 4px rgba(37,84,199,.15); }
+        .qinput:disabled { background: #f1f5f9; color: #475569; }
+        .qnone { padding: .85rem 1.1rem; border-radius: 12px; border: 2px dashed #94a3b8; color: #475569; font-weight: 800; white-space: nowrap; background: #fff; }
+        .qnone-on { border-style: solid; border-color: var(--red-pen); background: rgba(217,71,59,.08); color: var(--red-pen); }
+        .qhit { background: linear-gradient(transparent 50%, var(--highlight) 50%); font-weight: 900; padding: 0 .15em; }
+        .qscore { background: #fff; border-radius: 16px; padding: 2rem; text-align: center; margin-bottom: 1.5rem; box-shadow: 0 24px 48px -20px rgba(30,42,68,.3); }
+
         /* ===== 첫 화면: 수학 교실 테마 ===== */
         :root {
             --paper: #fbf8f1;
@@ -461,6 +476,8 @@
                                 studentsSnap.forEach(doc => {
                                     batch.delete(doc.ref);
                                 });
+                                const quizSnap = await getDocs(collection(db, 'rooms', candidatePin, 'quiz'));
+                                quizSnap.forEach(doc => batch.delete(doc.ref));
                                 await batch.commit();
                                 
                                 newPin = candidatePin;
@@ -607,7 +624,10 @@
             document.getElementById('statModalBody').innerHTML = html;
             document.getElementById('statModal').classList.remove('hidden');
         }
-        window.closeStatModal = () => document.getElementById('statModal').classList.add('hidden');
+        window.closeStatModal = () => {
+            document.getElementById('statModal').classList.add('hidden');
+            if (typeof unsubQuiz === 'function') { unsubQuiz(); unsubQuiz = null; }
+        };
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.closeStatModal(); });
 
         const emptyMsg = `<div class="text-center text-gray-400 text-2xl py-16">제출된 값이 없습니다.</div>`;
@@ -840,12 +860,388 @@
                                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
                                     학생용: 방 입장하기
                                 </button>
+                                <button onclick="openQuizJoin()" class="btn-main btn-quiz">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                                    형성평가 풀기
+                                </button>
                             </div>
-                            <div class="text-xs text-gray-300 mt-6">ver 1021-6 · 중앙값/최빈값</div>
+                            <div class="text-xs text-gray-300 mt-6">ver 1022-2 · 형성평가 점수 모으기</div>
                         </div>
                     </div>
                 </div>
             `;
+        }
+
+        // ============================================================
+        // ===== 형성평가 (평균·중앙값·최빈값) =====
+        // ============================================================
+        const rint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+        const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+        const pickDistinct = (k, lo = 1, hi = 20, exclude = []) => shuffle(Array.from({ length: hi - lo + 1 }, (_, i) => i + lo).filter(v => !exclude.includes(v))).slice(0, k);
+        const nfmt = (x) => Number.isInteger(x) ? String(x) : String(Math.round(x * 100) / 100);
+
+        function makeMeanQ() {
+            let data;
+            do { data = Array.from({ length: 5 }, () => rint(1, 20)); } while (data.reduce((s, v) => s + v, 0) % 5 !== 0);
+            const sum = data.reduce((s, v) => s + v, 0);
+            return { key: 'mean', kind: 'num', topic: '평균', title: '평균 구하기', data, answer: sum / 5,
+                ask: '다음 자료의 <b>평균</b>을 구하세요.',
+                explain: `(${data.join(' + ')}) ÷ 5 = ${sum} ÷ 5 = <b>${sum / 5}</b>` };
+        }
+        function makeMedianQ(n) {
+            const data = Array.from({ length: n }, () => rint(1, 20));
+            const s = [...data].sort((a, b) => a - b);
+            const odd = n % 2 === 1;
+            const idx = odd ? [(n - 1) / 2] : [n / 2 - 1, n / 2];
+            const ans = odd ? s[idx[0]] : (s[idx[0]] + s[idx[1]]) / 2;
+            const sortedHTML = s.map((v, i) => idx.includes(i) ? `<span class="qhit">${v}</span>` : v).join(', ');
+            const explain = odd
+                ? `작은 값부터 나열: ${sortedHTML}<br>자료가 ${n}개(홀수)이므로 ${idx[0] + 1}번째 값 → 중앙값 <b>${ans}</b>`
+                : `작은 값부터 나열: ${sortedHTML}<br>자료가 ${n}개(짝수)이므로 ${idx[0] + 1}번째와 ${idx[1] + 1}번째 값의 평균<br>(${s[idx[0]]} + ${s[idx[1]]}) ÷ 2 = <b>${nfmt(ans)}</b>`;
+            return { key: odd ? 'med7' : 'med10', kind: 'num', topic: '중앙값', title: `중앙값 구하기 (자료 ${n}개, ${odd ? '홀수' : '짝수'})`, data, answer: ans,
+                ask: '다음 자료의 <b>중앙값</b>을 구하세요.', explain };
+        }
+        function modeExplain(data) {
+            const cnt = new Map(); data.forEach(v => cnt.set(v, (cnt.get(v) || 0) + 1));
+            const entries = [...cnt.entries()].sort((a, b) => a[0] - b[0]);
+            const mx = Math.max(...entries.map(e => e[1]));
+            const none = entries.every(e => e[1] === mx);
+            const modes = none ? [] : entries.filter(e => e[1] === mx).map(e => e[0]);
+            const table = entries.map(([v, c]) => `<span class="${modes.includes(v) ? 'qhit' : ''}">${v}(${c}개)</span>`).join(' · ');
+            const tail = none
+                ? (mx === 1 ? '모든 값이 1개씩 → <b>최빈값 없음</b>' : `모든 값이 ${mx}개씩으로 같음 → <b>최빈값 없음</b>`)
+                : `가장 많이 나온 값(${mx}개) → 최빈값 <b>${modes.join(', ')}</b>`;
+            return { modes, explain: `값별 개수: ${table}<br>${tail}` };
+        }
+        function makeModeQ(type) {
+            let data, title;
+            if (type === 'none') {
+                title = '최빈값 구하기';
+                if (Math.random() < 0.5) data = pickDistinct(7);
+                else data = pickDistinct(4).flatMap(v => [v, v]);
+            } else if (type === 'one') {
+                title = '최빈값 구하기';
+                const [m, ...rest] = pickDistinct(6);
+                data = [m, m, m, rest[0], rest[0], rest[1], rest[2], rest[3], rest[4]];
+            } else {
+                title = '최빈값 구하기';
+                const multi = Math.random() < 0.5 ? 2 : 3;
+                const vals = pickDistinct(multi + 3);
+                data = [...vals.slice(0, multi).flatMap(v => [v, v, v]), ...vals.slice(multi)];
+            }
+            data = shuffle(data);
+            const { modes, explain } = modeExplain(data);
+            return { key: 'mode_' + type, kind: 'mode', topic: '최빈값', title, data, answer: modes,
+                ask: '다음 자료의 <b>최빈값</b>을 구하세요. (2개 이상이면 모두 쓰고, 없으면 [최빈값 없음]을 누르세요.)', explain };
+        }
+        function buildQuiz() {
+            return [makeMeanQ(), makeMedianQ(7), makeMedianQ(10), ...shuffle([makeModeQ('none'), makeModeQ('one'), makeModeQ('multi')])];
+        }
+
+        // ===== 형성평가 응시 정보 입력 / 점수 저장 =====
+        const getQuizColRef = (pin) => collection(db, 'rooms', pin, 'quiz');
+        const getQuizDocRef = (pin, key) => doc(db, 'rooms', pin, 'quiz', key);
+        const QUIZ_KEYS = ['mean', 'med7', 'med10', 'mode_none', 'mode_one', 'mode_multi'];
+        const QUIZ_TOPICS = ['평균', '중앙값(홀수)', '중앙값(짝수)', '최빈값 없음', '최빈값 1개', '최빈값 2개↑'];
+
+        window.quizUser = null; // { pin, sid, name, key }
+
+        window.openQuizJoin = () => { currentMode = 'quizJoin'; renderUI(); };
+
+        window.handleQuizJoin = async (e) => {
+            e.preventDefault();
+            const pin = document.getElementById('qPin').value.trim();
+            const sid = document.getElementById('qSid').value.trim();
+            const name = document.getElementById('qName').value.trim();
+            if (!sid || !name) return showToast("학번과 이름을 입력하세요.", true);
+            if (pin) {
+                if (!currentUser) return showToast("서버 연결 중입니다. 잠시 후 다시 시도하세요.", true);
+                try {
+                    const snap = await getDoc(getRoomDocRef(pin));
+                    if (!snap.exists()) return showToast("존재하지 않는 방 번호입니다.", true);
+                    const r = snap.data();
+                    if (r.createdAt && Date.now() - r.createdAt > 7 * 24 * 60 * 60 * 1000) return showToast("만료된 방입니다. (생성 후 7일 경과)", true);
+                } catch (err) {
+                    console.error(err);
+                    return showToast("방 확인에 실패했습니다.", true);
+                }
+            }
+            window.quizUser = { pin: pin || null, sid, name, key: `${sid}_${name}`.replace(/\//g, '-') };
+            window.startQuiz();
+        };
+
+        async function saveQuizResult(score, total, details) {
+            const u = window.quizUser;
+            if (!u || !u.pin || !currentUser) return false;
+            const ref = getQuizDocRef(u.pin, u.key);
+            const snap = await getDoc(ref);
+            const prev = snap.exists() ? snap.data() : null;
+            const now = Date.now();
+            const data = prev ? {
+                attempts: (prev.attempts || 1) + 1,
+                bestScore: Math.max(prev.bestScore || 0, score),
+                lastScore: score,
+                lastDetails: details,
+                updatedAt: now
+            } : {
+                studentId: u.sid, name: u.name, total,
+                attempts: 1,
+                firstScore: score, firstDetails: details,
+                bestScore: score, lastScore: score, lastDetails: details,
+                createdAt: now, updatedAt: now
+            };
+            await setDoc(ref, data, { merge: true });
+            return true;
+        }
+
+        function getQuizJoinView() {
+            return `
+                <div class="main-stage">
+                    <div class="grid-bg" aria-hidden="true"></div>
+                    <div class="relative z-10 flex-grow flex items-center justify-center py-8 fade-in">
+                        <div class="paper-card">
+                            <div class="tape" aria-hidden="true"></div>
+                            <button onclick="setMode('main')" class="absolute top-5 left-8 text-gray-400 hover:text-gray-700" title="뒤로">
+                                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                            </button>
+                            <span class="hand-note">형성평가</span>
+                            <h1 class="main-title" style="font-size:2.25rem"><span class="hl">대표값</span> 확인 문제</h1>
+                            <form onsubmit="handleQuizJoin(event)" class="flex flex-col gap-3 mt-6 text-left">
+                                <label class="text-sm font-bold text-gray-500">방 번호(PIN) <span class="font-normal">— 선생님께 점수를 보내려면 입력</span></label>
+                                <input id="qPin" type="text" inputmode="numeric" maxlength="5" autocomplete="off" class="qinput tracking-[0.3em]" placeholder="PIN (선택)">
+                                <label class="text-sm font-bold text-gray-500 mt-2">학번 · 이름</label>
+                                <div class="flex gap-3">
+                                    <input id="qSid" type="text" inputmode="numeric" autocomplete="off" class="qinput w-2/5 min-w-0" placeholder="학번" required>
+                                    <input id="qName" type="text" autocomplete="off" class="qinput flex-1 min-w-0" placeholder="이름" required>
+                                </div>
+                                <button type="submit" class="btn-main btn-quiz mt-4">문제 풀기 시작</button>
+                                <p class="text-xs text-gray-400 text-center mt-1">PIN 없이 시작하면 연습 모드로 풀어요. (점수 저장 안 됨)</p>
+                            </form>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        // ===== 교사용: 형성평가 결과 보기 =====
+        let unsubQuiz = null;
+        window.showQuizResults = () => {
+            if (!currentPin) return;
+            if (unsubQuiz) unsubQuiz();
+            openStatModal(`<h2 class="text-4xl font-black text-gray-800 mb-2">형성평가 결과</h2><div class="text-gray-400 py-10 text-center">불러오는 중...</div>`);
+            unsubQuiz = onSnapshot(getQuizColRef(currentPin), (snap) => {
+                const rows = [];
+                snap.forEach(d => rows.push(d.data()));
+                rows.sort((a, b) => String(a.studentId).localeCompare(String(b.studentId), 'ko', { numeric: true }));
+                if (document.getElementById('statModal').classList.contains('hidden')) return;
+                document.getElementById('statModalBody').innerHTML = renderQuizResults(rows);
+            }, (err) => {
+                console.error(err);
+                document.getElementById('statModalBody').innerHTML = `<div class="text-red-500 py-10 text-center">결과를 불러오지 못했습니다.</div>`;
+            });
+        };
+
+        function renderQuizResults(rows) {
+            const title = `<h2 class="text-4xl font-black text-gray-800 mb-1">형성평가 결과</h2>
+                <p class="text-gray-500 mb-6">PIN <b>${currentPin}</b>으로 응시한 학생 · 실시간으로 갱신돼요. (유형별 O/X는 <b>첫 응시</b> 기준)</p>`;
+            if (rows.length === 0) return title + `<div class="text-center text-gray-400 text-xl py-16">아직 제출한 학생이 없습니다.<br><span class="text-base">학생들에게 첫 화면 [형성평가 풀기]에서 PIN <b>${currentPin}</b>을 입력하게 해 주세요.</span></div>`;
+
+            const n = rows.length;
+            const total = rows[0].total || 6;
+            const avgFirst = rows.reduce((s, r) => s + (r.firstScore || 0), 0) / n;
+            const avgBest = rows.reduce((s, r) => s + (r.bestScore || 0), 0) / n;
+            const rates = QUIZ_TOPICS.map((_, i) => Math.round(100 * rows.filter(r => (r.firstDetails || [])[i]).length / n));
+
+            const summary = `
+                <div class="grid grid-cols-3 gap-3 mb-5 text-center">
+                    <div class="bg-gray-50 rounded-2xl p-4"><div class="text-gray-500 font-bold text-sm">응시 인원</div><div class="text-4xl font-black text-gray-800">${n}<span class="text-xl">명</span></div></div>
+                    <div class="bg-gray-50 rounded-2xl p-4"><div class="text-gray-500 font-bold text-sm">첫 응시 평균</div><div class="text-4xl font-black text-gray-800">${fmt(avgFirst)}<span class="text-xl text-gray-400"> / ${total}</span></div></div>
+                    <div class="bg-gray-50 rounded-2xl p-4"><div class="text-gray-500 font-bold text-sm">최고 점수 평균</div><div class="text-4xl font-black text-orange-600">${fmt(avgBest)}<span class="text-xl text-gray-400"> / ${total}</span></div></div>
+                </div>
+                <div class="mb-6">
+                    <div class="font-bold text-gray-600 mb-2">유형별 정답률 (첫 응시)</div>
+                    <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                        ${rates.map((r, i) => `
+                            <div class="rounded-xl p-3 text-center border-2 ${r < 50 ? 'border-red-200 bg-red-50' : r < 80 ? 'border-yellow-200 bg-yellow-50' : 'border-green-200 bg-green-50'}">
+                                <div class="text-xs font-bold text-gray-500">${QUIZ_TOPICS[i]}</div>
+                                <div class="text-2xl font-black ${r < 50 ? 'text-red-600' : r < 80 ? 'text-yellow-700' : 'text-green-700'}">${r}%</div>
+                            </div>`).join('')}
+                    </div>
+                </div>`;
+
+            const table = `
+                <div class="overflow-x-auto">
+                <table class="min-w-full text-center border-collapse">
+                    <thead class="bg-gray-800 text-white text-sm">
+                        <tr>
+                            <th class="py-2 px-2">학번</th><th class="py-2 px-2">이름</th>
+                            ${QUIZ_TOPICS.map(t => `<th class="py-2 px-1 text-xs font-bold">${t}</th>`).join('')}
+                            <th class="py-2 px-2">첫 점수</th><th class="py-2 px-2">최고</th><th class="py-2 px-2">응시</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        ${rows.map(r => `
+                            <tr class="hover:bg-gray-50">
+                                <td class="py-2 px-2 text-gray-500">${r.studentId}</td>
+                                <td class="py-2 px-2 font-bold text-gray-800 whitespace-nowrap">${r.name}</td>
+                                ${QUIZ_TOPICS.map((_, i) => { const ok = (r.firstDetails || [])[i]; return `<td class="py-2 px-1 font-black ${ok ? 'text-green-600' : 'text-red-500'}">${ok ? 'O' : 'X'}</td>`; }).join('')}
+                                <td class="py-2 px-2 font-black text-gray-800">${r.firstScore}</td>
+                                <td class="py-2 px-2 font-black text-orange-600">${r.bestScore}</td>
+                                <td class="py-2 px-2 text-gray-500">${r.attempts}회</td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+                </div>
+                <div class="mt-5 text-right">
+                    <button onclick="downloadQuizCSV()" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-2 px-4 rounded-xl">엑셀(CSV)로 내려받기</button>
+                </div>`;
+            window._quizRows = rows;
+            return title + summary + table;
+        }
+
+        window.downloadQuizCSV = () => {
+            const rows = window._quizRows || [];
+            const head = ['학번', '이름', ...QUIZ_TOPICS, '첫 점수', '최고 점수', '마지막 점수', '응시 횟수'];
+            const lines = [head, ...rows.map(r => [r.studentId, r.name, ...QUIZ_TOPICS.map((_, i) => (r.firstDetails || [])[i] ? 'O' : 'X'), r.firstScore, r.bestScore, r.lastScore, r.attempts])]
+                .map(cols => cols.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','));
+            const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `형성평가_결과_${currentPin}.csv`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        };
+
+        window.quizState = { questions: [], answers: [], graded: false, version: 0 };
+
+        window.startQuiz = () => {
+            window.quizState = { questions: buildQuiz(), answers: [], graded: false, version: window.quizState.version + 1 };
+            currentMode = 'quiz';
+            renderUI();
+            window.scrollTo(0, 0);
+        };
+
+        window.toggleNoMode = (i) => {
+            const input = document.getElementById(`qa${i}`);
+            const btn = document.getElementById(`qn${i}`);
+            const on = input.dataset.none !== '1';
+            input.dataset.none = on ? '1' : '0';
+            input.value = on ? '' : input.value;
+            input.disabled = on;
+            input.placeholder = on ? '최빈값 없음' : '예: 7 또는 3, 9';
+            btn.classList.toggle('qnone-on', on);
+        };
+
+        function parseNums(str) {
+            return (str || '').split(/[,\s/·]+/).map(t => t.trim()).filter(Boolean).map(Number);
+        }
+
+        window.gradeQuiz = () => {
+            const qs = window.quizState.questions;
+            const answers = qs.map((q, i) => {
+                const input = document.getElementById(`qa${i}`);
+                if (q.kind === 'mode') return { none: input.dataset.none === '1', text: input.value.trim() };
+                return { text: input.value.trim() };
+            });
+            const blank = answers.findIndex((a, i) => !a.none && a.text === '');
+            if (blank !== -1) {
+                showToast(`${blank + 1}번 문제의 답을 입력하세요.`, true);
+                document.getElementById(`qa${blank}`).focus();
+                return;
+            }
+            answers.forEach((a, i) => {
+                const q = qs[i];
+                if (q.kind === 'num') {
+                    const v = Number(a.text.replace(/\s/g, ''));
+                    a.correct = !isNaN(v) && Math.abs(v - q.answer) < 1e-9;
+                } else if (a.none) {
+                    a.correct = q.answer.length === 0;
+                } else {
+                    const got = [...new Set(parseNums(a.text))].sort((x, y) => x - y);
+                    a.correct = q.answer.length > 0 && got.length === q.answer.length && got.every((v, k) => v === q.answer[k]);
+                }
+            });
+            window.quizState.answers = answers;
+            window.quizState.graded = true;
+            renderUI();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            const score = answers.filter(a => a.correct).length;
+            if (score === qs.length && typeof fireConfetti === 'function') fireConfetti();
+            if (window.quizUser && window.quizUser.pin) {
+                saveQuizResult(score, qs.length, QUIZ_KEYS.map(k => !!(answers[qs.findIndex(q => q.key === k)] || {}).correct))
+                    .then(ok => { if (ok) showToast("점수가 선생님께 제출되었습니다."); })
+                    .catch(err => { console.error(err); showToast("점수 제출에 실패했습니다. 인터넷 연결을 확인하세요.", true); });
+            }
+        };
+
+        function getQuizView() {
+            const { questions: qs, answers, graded } = window.quizState;
+            const score = graded ? answers.filter(a => a.correct).length : 0;
+
+            const cards = qs.map((q, i) => {
+                const a = answers[i] || {};
+                const dataChips = q.data.map(v => `<span class="qchip">${v}</span>`).join('');
+                let inputHTML;
+                if (q.kind === 'mode') {
+                    inputHTML = `
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <input id="qa${i}" type="text" inputmode="text" autocomplete="off" class="qinput flex-1"
+                                placeholder="${a.none ? '최빈값 없음' : '예: 7 또는 3, 9'}" value="${a.text || ''}" data-none="${a.none ? '1' : '0'}" ${graded || a.none ? 'disabled' : ''}>
+                            <button type="button" id="qn${i}" onclick="toggleNoMode(${i})" class="qnone ${a.none ? 'qnone-on' : ''}" ${graded ? 'disabled' : ''}>최빈값 없음</button>
+                        </div>`;
+                } else {
+                    inputHTML = `<input id="qa${i}" type="text" inputmode="decimal" autocomplete="off" class="qinput w-full sm:w-48" placeholder="답 입력" value="${a.text || ''}" ${graded ? 'disabled' : ''}>`;
+                }
+                const answerText = q.kind === 'mode' ? (q.answer.length ? q.answer.join(', ') : '최빈값 없음') : nfmt(q.answer);
+                const result = graded ? `
+                    <div class="mt-4 rounded-xl p-4 ${a.correct ? 'bg-green-50 border-2 border-green-200' : 'bg-red-50 border-2 border-red-200'}">
+                        <div class="font-black text-lg ${a.correct ? 'text-green-700' : 'text-red-600'}">${a.correct ? '⭕ 정답!' : `❌ 오답 · 정답: ${answerText}`}</div>
+                        <div class="text-gray-700 mt-2 leading-relaxed break-keep">${q.explain}</div>
+                    </div>` : '';
+                return `
+                    <div class="qcard">
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="qno">${i + 1}</span>
+                            <span class="qtag">${q.topic}</span>
+                            <span class="font-bold text-gray-500 text-sm">${q.title}</span>
+                        </div>
+                        <p class="text-lg text-gray-800 mb-3 break-keep">${q.ask}</p>
+                        <div class="flex flex-wrap gap-2 mb-4">${dataChips}</div>
+                        ${inputHTML}
+                        ${result}
+                    </div>`;
+            }).join('');
+
+            const header = graded ? `
+                <div class="qscore">
+                    <div class="hand-note">채점 결과</div>
+                    <div class="text-6xl font-black text-[#1e2a44]">${score} <span class="text-3xl text-gray-400">/ ${qs.length}</span></div>
+                    <div class="mt-2 text-gray-600 font-bold">${score === qs.length ? '완벽해요! 대표값 박사 인정 🎉' : score >= 4 ? '잘했어요! 틀린 문제의 풀이를 확인해 보세요.' : '풀이를 천천히 읽고 [새 문제로 다시 풀기]에 도전해 보세요.'}</div>
+                </div>` : `
+                <div class="mb-6">
+                    <span class="hand-note">형성평가</span>
+                    <h1 class="main-title"><span class="hl">대표값</span> 확인 문제</h1>
+                    <p class="text-gray-500 mt-2 break-keep">평균 1문제 · 중앙값 2문제 · 최빈값 3문제 (모든 자료는 20 이하의 자연수)<br>중앙값이 소수이면 소수로 써도 돼요. (예: 8.5)</p>
+                </div>`;
+
+            return `
+                <div class="main-stage">
+                    <div class="grid-bg" aria-hidden="true"></div>
+                    <div class="relative z-10 w-full max-w-3xl mx-auto py-6 fade-in">
+                        <button onclick="setMode('main')" class="mb-4 inline-flex items-center gap-2 text-gray-500 hover:text-gray-800 font-bold">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                            처음 화면
+                        </button>
+                        ${window.quizUser ? `<div class="inline-flex items-center gap-2 bg-white rounded-xl px-4 py-2 mb-4 shadow-sm border border-gray-200 font-bold text-gray-700">${window.quizUser.sid} ${window.quizUser.name}<span class="text-xs font-bold px-2 py-0.5 rounded-full ${window.quizUser.pin ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}">${window.quizUser.pin ? 'PIN ' + window.quizUser.pin + ' 제출' : '연습 모드'}</span></div>` : ''}
+                        ${header}
+                        <div class="flex flex-col gap-5">${cards}</div>
+                        <div class="mt-8 flex flex-col sm:flex-row gap-3">
+                            ${graded
+                                ? `<button onclick="startQuiz()" class="btn-main btn-student">새 문제로 다시 풀기</button>
+                                   <button onclick="setMode('main')" class="btn-main btn-teacher">처음 화면으로</button>`
+                                : `<button onclick="gradeQuiz()" class="btn-main btn-student">채점하기</button>`}
+                        </div>
+                    </div>
+                </div>`;
         }
 
         function getJoinView() {
@@ -1160,6 +1556,7 @@
                                 : `<button onclick="handleNextRound()" class="bg-green-500 hover:bg-green-600 text-white font-black py-3 px-6 rounded-xl text-lg shadow-lg flex items-center gap-2 transition-transform transform hover:scale-105">새 라운드 시작 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg></button>`
                             }
                             <button onclick="handleResetGame()" class="bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white font-bold py-3 px-4 rounded-xl text-base shadow-md transition-colors border border-slate-600 hover:border-red-500">초기화</button>
+                            <button onclick="showQuizResults()" class="bg-yellow-300 hover:bg-yellow-400 text-slate-900 font-black py-3 px-4 rounded-xl text-base shadow-md transition-colors border-2 border-yellow-500">형성평가 결과</button>
                             ${isRevealed ? `
                                 <button onclick="showMedian()" class="bg-white hover:bg-orange-50 text-slate-900 font-black py-3 px-5 rounded-xl text-lg shadow-md transition-colors border-2 border-orange-300">중앙값</button>
                                 <button onclick="showMode()" class="bg-white hover:bg-orange-50 text-slate-900 font-black py-3 px-5 rounded-xl text-lg shadow-md transition-colors border-2 border-orange-300">최빈값</button>
@@ -1196,6 +1593,12 @@
             } else if (currentMode === 'main') {
                 html = getMainView();
                 currentStateStr = "main";
+            } else if (currentMode === 'quizJoin') {
+                html = getQuizJoinView();
+                currentStateStr = "quizJoin";
+            } else if (currentMode === 'quiz') {
+                html = getQuizView();
+                currentStateStr = "quiz_" + window.quizState.version + "_" + window.quizState.graded;
             } else if (currentMode === 'join') {
                 html = getJoinView();
                 currentStateStr = "join";
