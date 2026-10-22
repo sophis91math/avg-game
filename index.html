@@ -174,7 +174,7 @@
     <div id="pwModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50 fade-in">
         <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm text-center">
             <h2 class="text-2xl font-bold mb-6 text-gray-800">관리자 비밀번호</h2>
-            <input type="password" id="pwInput" class="w-full px-4 py-4 border-2 border-gray-300 rounded-xl mb-8 text-center text-3xl tracking-[0.5em] focus:ring-4 focus:ring-blue-200 focus:outline-none" placeholder="****">
+            <input type="text" id="pwInput" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" class="w-full px-4 py-4 border-2 border-gray-300 rounded-xl mb-8 text-center text-3xl tracking-[0.5em] focus:ring-4 focus:ring-blue-200 focus:outline-none" placeholder="****">
             <div class="flex gap-4">
                 <button id="pwCancelBtn" class="flex-1 bg-gray-200 text-gray-800 py-4 rounded-xl font-bold text-xl hover:bg-gray-300 transition-colors">취소</button>
                 <button id="pwSubmitBtn" class="flex-1 bg-gray-800 text-white py-4 rounded-xl font-bold text-xl hover:bg-gray-900 transition-colors">확인</button>
@@ -436,6 +436,7 @@
             document.getElementById('pwModal').classList.remove('hidden');
             const pwInput = document.getElementById('pwInput');
             pwInput.value = '';
+            pwValue = '';
             setTimeout(() => pwInput.focus(), 50);
         };
         const closePwModal = () => document.getElementById('pwModal').classList.add('hidden');
@@ -445,7 +446,7 @@
         const tryCreateRoom = async () => {
             if (!currentUser) return showToast("인증이 필요합니다.", true);
 
-            const pw = document.getElementById('pwInput').value;
+            const pw = pwValue;
             if (pw === '13579') {
                 closePwModal();
                 
@@ -513,10 +514,21 @@
             } else {
                 showToast("비밀번호가 틀렸습니다.", true);
                 document.getElementById('pwInput').value = '';
+                pwValue = '';
                 document.getElementById('pwInput').focus();
             }
         };
         document.getElementById('pwSubmitBtn').addEventListener('click', tryCreateRoom);
+        // 비밀번호 가리기: 실제 값은 변수에만 저장하고 칸에는 ●만 표시 (휴대폰에서 마지막 글자가 잠깐 보이는 것도 방지)
+        let pwValue = '';
+        document.getElementById('pwInput').addEventListener('input', (e) => {
+            const el = e.target;
+            const shown = el.value;
+            const kept = (shown.match(/●/g) || []).length;
+            const added = shown.replace(/●/g, '').replace(/\s/g, '');
+            pwValue = pwValue.slice(0, kept) + added;
+            el.value = '●'.repeat(pwValue.length);
+        });
         document.getElementById('pwInput').addEventListener('keydown', (e) => { if(e.key === 'Enter') tryCreateRoom(); });
 
         window.handleBidSubmit = async (e) => {
@@ -865,7 +877,7 @@
                                     형성평가 풀기
                                 </button>
                             </div>
-                            <div class="text-xs text-gray-300 mt-6">ver 1022-2 · 형성평가 점수 모으기</div>
+                            <div class="text-xs text-gray-300 mt-6">ver 1022-5 · 비밀번호 변경</div>
                         </div>
                     </div>
                 </div>
@@ -881,16 +893,17 @@
         const nfmt = (x) => Number.isInteger(x) ? String(x) : String(Math.round(x * 100) / 100);
 
         function makeMeanQ() {
+            const n = rint(3, 5);   // 변량 3~5개
             let data;
-            do { data = Array.from({ length: 5 }, () => rint(1, 20)); } while (data.reduce((s, v) => s + v, 0) % 5 !== 0);
+            do { data = Array.from({ length: n }, () => rint(1, 20)); } while (data.reduce((s, v) => s + v, 0) % n !== 0);
             const sum = data.reduce((s, v) => s + v, 0);
-            return { key: 'mean', kind: 'num', topic: '평균', title: '평균 구하기', data, answer: sum / 5,
+            return { key: 'mean', kind: 'num', topic: '평균', title: `평균 구하기 (변량 ${n}개)`, data, answer: sum / n,
                 ask: '다음 자료의 <b>평균</b>을 구하세요.',
-                explain: `(${data.join(' + ')}) ÷ 5 = ${sum} ÷ 5 = <b>${sum / 5}</b>` };
+                explain: `(${data.join(' + ')}) ÷ ${n} = ${sum} ÷ ${n} = <b>${sum / n}</b>` };
         }
         function makeMedianQ(n) {
-            const data = Array.from({ length: n }, () => rint(1, 20));
-            const s = [...data].sort((a, b) => a - b);
+            const data = Array.from({ length: n }, () => rint(1, 20)).sort((a, b) => a - b);  // 작은 값부터 정렬해서 제시
+            const s = data;
             const odd = n % 2 === 1;
             const idx = odd ? [(n - 1) / 2] : [n / 2 - 1, n / 2];
             const ans = odd ? s[idx[0]] : (s[idx[0]] + s[idx[1]]) / 2;
