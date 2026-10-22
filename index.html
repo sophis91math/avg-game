@@ -1569,11 +1569,11 @@
                                 : `<button onclick="handleNextRound()" class="bg-green-500 hover:bg-green-600 text-white font-black py-3 px-6 rounded-xl text-lg shadow-lg flex items-center gap-2 transition-transform transform hover:scale-105">새 라운드 시작 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg></button>`
                             }
                             <button onclick="handleResetGame()" class="bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white font-bold py-3 px-4 rounded-xl text-base shadow-md transition-colors border border-slate-600 hover:border-red-500">초기화</button>
-                            <button onclick="showQuizResults()" class="bg-yellow-300 hover:bg-yellow-400 text-slate-900 font-black py-3 px-4 rounded-xl text-base shadow-md transition-colors border-2 border-yellow-500">형성평가 결과</button>
                             ${isRevealed ? `
                                 <button onclick="showMedian()" class="bg-white hover:bg-orange-50 text-slate-900 font-black py-3 px-5 rounded-xl text-lg shadow-md transition-colors border-2 border-orange-300">중앙값</button>
                                 <button onclick="showMode()" class="bg-white hover:bg-orange-50 text-slate-900 font-black py-3 px-5 rounded-xl text-lg shadow-md transition-colors border-2 border-orange-300">최빈값</button>
                             ` : ''}
+                            <button onclick="showQuizResults()" class="bg-yellow-300 hover:bg-yellow-400 text-slate-900 font-black py-3 px-4 rounded-xl text-base shadow-md transition-colors border-2 border-yellow-500">형성평가 결과</button>
                         </div>
                     </div>
                     ${boardHTML}
