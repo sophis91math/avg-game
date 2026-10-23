@@ -750,8 +750,166 @@
         };
 
         window.teacherState = {
-            isModeVisible: false
+            isModeVisible: false,
+            extras: []   // 극단값 체험용으로 선생님이 넣은 값 (화면에서만 사용, 저장·순위에는 영향 없음)
         };
+
+        // ===== 분포 그래프 + 극단값 체험 =====
+        function calcStats(vals) {
+            const s = [...vals].sort((a, b) => a - b);
+            const n = s.length;
+            if (n === 0) return null;
+            const mean = s.reduce((t, v) => t + v, 0) / n;
+            const median = n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+            const cnt = new Map();
+            s.forEach(v => cnt.set(v, (cnt.get(v) || 0) + 1));
+            const entries = [...cnt.entries()];
+            const mx = Math.max(...entries.map(e => e[1]));
+            const allSame = entries.length > 1 && entries.every(e => e[1] === mx);
+            const modes = allSame ? [] : entries.filter(e => e[1] === mx).map(e => e[0]);
+            return { n, mean, median, modes, modeCount: mx, sorted: s };
+        }
+
+        window.addExtraValue = (e, preset) => {
+            if (e) e.preventDefault();
+            let v = preset;
+            if (v === undefined) {
+                const el = document.getElementById('extraInput');
+                v = parseInt(el ? el.value : '', 10);
+                if (el) el.value = '';
+            }
+            if (isNaN(v) || v < 0 || v > 100) return showToast("0부터 100 사이의 정수를 입력하세요.", true);
+            window.teacherState.extras = [...window.teacherState.extras, v];
+            renderUI();
+        };
+        window.clearExtraValues = () => {
+            window.teacherState.extras = [];
+            renderUI();
+        };
+
+        function getDistributionPanel(baseVals) {
+            const extras = window.teacherState.extras;
+            const allVals = [...baseVals, ...extras];
+            const before = calcStats(baseVals);
+            const now = calcStats(allVals);
+            if (!now) return '';
+
+            const C = { mean: '#2554c7', median: '#ea580c', mode: '#16a34a', extra: '#d9473b', dot: '#94a3b8' };
+
+            // ---- 가로축 범위: 자료에 맞춰 10 단위로 자동 확대 ----
+            const minV = Math.min(...allVals), maxV = Math.max(...allVals);
+            let lo = Math.max(0, Math.floor((minV - 2) / 10) * 10);
+            let hi = Math.min(100, Math.ceil((maxV + 2) / 10) * 10);
+            if (hi - lo < 10) { hi = Math.min(100, lo + 10); lo = Math.max(0, hi - 10); }
+            const range = hi - lo;
+            const tickStep = range <= 20 ? 1 : range <= 50 ? 5 : 10;
+            const labelStep = range <= 20 ? 2 : range <= 50 ? 5 : 10;
+
+            const W = 1000, padL = 40, padR = 40, plotW = W - padL - padR;
+            const x = (v) => padL + (v - lo) / range * plotW;
+            const unit = plotW / range;
+            const r = Math.max(6, Math.min(16, unit * 0.42));
+            const gap = 2 * r + 3;
+
+            // 같은 값은 위로 쌓기 (원래 값 먼저, 극단값은 위에)
+            const stack = new Map();
+            const dots = [];
+            baseVals.forEach(v => { const k = stack.get(v) || 0; stack.set(v, k + 1); dots.push({ v, k, extra: false }); });
+            extras.forEach(v => { const k = stack.get(v) || 0; stack.set(v, k + 1); dots.push({ v, k, extra: true }); });
+            const maxStack = Math.max(...stack.values());
+
+            const labelRows = 3, rowH = 30, topPad = 12;
+            const labelsH = topPad + labelRows * rowH;
+            const stackH = Math.max(maxStack * gap + 20, 80);
+            const axisY = labelsH + stackH;
+            const H = axisY + 46;
+
+            let ticks = '';
+            for (let t = lo; t <= hi; t += tickStep) {
+                const isLabel = (t - lo) % labelStep === 0;
+                ticks += `<line x1="${x(t)}" y1="${axisY}" x2="${x(t)}" y2="${axisY + (isLabel ? 10 : 5)}" stroke="#64748b" stroke-width="1.5"/>`;
+                if (isLabel) ticks += `<text x="${x(t)}" y="${axisY + 32}" text-anchor="middle" font-size="20" font-weight="700" fill="#475569">${t}</text>`;
+            }
+
+            const dotsSVG = dots.map(d => `<circle cx="${x(d.v)}" cy="${axisY - r - 4 - d.k * gap}" r="${r}" fill="${d.extra ? C.extra : C.dot}" ${d.extra ? `stroke="#fff" stroke-width="2"` : ''}/>`).join('');
+
+            const line = (v, color, row, label) => {
+                const ly = topPad + row * rowH + 20;
+                const lx = Math.min(Math.max(x(v), padL + 60), W - padR - 60);
+                return `
+                    <line x1="${x(v)}" y1="${ly + 6}" x2="${x(v)}" y2="${axisY}" stroke="${color}" stroke-width="3" stroke-dasharray="${row === 0 ? '0' : row === 1 ? '8 5' : '3 4'}"/>
+                    <text x="${lx}" y="${ly}" text-anchor="middle" font-size="20" font-weight="900" fill="${color}" stroke="#fff" stroke-width="6" stroke-linejoin="round" paint-order="stroke">${label}</text>`;
+            };
+            let markers = line(now.mean, C.mean, 0, `평균 ${fmt(now.mean)}`) + line(now.median, C.median, 1, `중앙값 ${fmt(now.median)}`);
+            now.modes.slice(0, 4).forEach((m, i) => { markers += line(m, C.mode, 2, i === 0 ? `최빈값 ${now.modes.join(', ')}` : ''); });
+
+            const svg = `
+                <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" role="img" aria-label="제출값 분포 그래프">
+                    <line x1="${padL}" y1="${axisY}" x2="${W - padR}" y2="${axisY}" stroke="#334155" stroke-width="2"/>
+                    ${ticks}
+                    ${dotsSVG}
+                    ${markers}
+                </svg>`;
+
+            // ---- 대표값 카드 (극단값을 넣으면 전/후 비교) ----
+            const hasExtra = extras.length > 0 && before;
+            const modeStr = (st) => st.modes.length ? st.modes.join(', ') : '없음';
+            const card = (name, color, beforeVal, nowVal, numBefore, numNow) => {
+                const moved = hasExtra && numBefore !== null ? Math.abs(numNow - numBefore) : null;
+                return `
+                    <div class="rounded-2xl p-4 text-center border-2" style="border-color:${color}33;background:${color}0d">
+                        <div class="font-bold text-sm" style="color:${color}">${name}</div>
+                        ${hasExtra ? `
+                            <div class="text-lg text-gray-400 font-bold mt-1">${beforeVal} →</div>
+                            <div class="text-4xl font-black" style="color:${color}">${nowVal}</div>
+                            ${moved !== null ? `<div class="text-sm font-bold mt-1 ${moved >= 3 ? 'text-red-600' : 'text-gray-500'}">${moved < 0.05 ? '변화 없음' : `${fmt(moved)}만큼 이동`}</div>` : ''}
+                        ` : `<div class="text-4xl font-black mt-1" style="color:${color}">${nowVal}</div>`}
+                    </div>`;
+            };
+            const cards = `
+                <div class="grid grid-cols-3 gap-3">
+                    ${card('평균', C.mean, before ? fmt(before.mean) : '-', fmt(now.mean), before ? before.mean : null, now.mean)}
+                    ${card('중앙값', C.median, before ? fmt(before.median) : '-', fmt(now.median), before ? before.median : null, now.median)}
+                    ${card('최빈값', C.mode, before ? modeStr(before) : '-', modeStr(now), null, null)}
+                </div>`;
+
+            const extraChips = extras.map(v => `<span class="inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded-lg bg-red-50 text-red-600 font-black border border-red-200">${v}</span>`).join('');
+
+            return `
+                <div class="bg-white rounded-3xl shadow-xl border border-gray-200 p-6 sm:p-8 mb-8">
+                    <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                        <h3 class="text-2xl font-black text-gray-800">제출값 분포와 대표값</h3>
+                        <div class="text-gray-500 font-bold">자료 ${now.n}개${extras.length ? ` <span class="text-red-600">(극단값 ${extras.length}개 포함)</span>` : ''}</div>
+                    </div>
+                    <div class="flex flex-wrap gap-4 text-sm font-bold text-gray-500 mb-2">
+                        <span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:${C.dot}"></span>학생 제출값</span>
+                        ${extras.length ? `<span class="flex items-center gap-1.5"><span class="inline-block w-3 h-3 rounded-full" style="background:${C.extra}"></span>선생님이 넣은 값</span>` : ''}
+                        <span style="color:${C.mean}">━ 평균</span>
+                        <span style="color:${C.median}">╍ 중앙값</span>
+                        <span style="color:${C.mode}">┅ 최빈값</span>
+                    </div>
+                    ${svg}
+                    <div class="mt-6 grid lg:grid-cols-5 gap-6 items-start">
+                        <div class="lg:col-span-3">${cards}</div>
+                        <div class="lg:col-span-2 bg-slate-50 rounded-2xl p-4 border border-slate-200">
+                            <div class="font-black text-gray-800 mb-1">극단값 체험</div>
+                            <p class="text-sm text-gray-500 mb-3 break-keep">아주 크거나 작은 값을 넣으면 대표값이 어떻게 변할까요? <span class="text-gray-400">(그래프에서만 계산되고 순위에는 영향 없어요)</span></p>
+                            <div class="flex gap-2 mb-2">
+                                <button onclick="addExtraValue(null, 100)" class="flex-1 bg-white hover:bg-red-50 border-2 border-red-300 text-red-600 font-black py-2 rounded-xl">100 넣기</button>
+                                <button onclick="addExtraValue(null, 0)" class="flex-1 bg-white hover:bg-red-50 border-2 border-red-300 text-red-600 font-black py-2 rounded-xl">0 넣기</button>
+                            </div>
+                            <form onsubmit="addExtraValue(event)" class="flex gap-2">
+                                <input id="extraInput" type="number" min="0" max="100" placeholder="직접 입력" class="flex-1 min-w-0 px-3 py-2 border-2 border-gray-300 rounded-xl text-lg font-bold text-center focus:outline-none focus:border-red-400">
+                                <button type="submit" class="bg-red-500 hover:bg-red-600 text-white font-black px-4 rounded-xl">넣기</button>
+                            </form>
+                            ${extras.length ? `
+                                <div class="flex flex-wrap items-center gap-2 mt-3">${extraChips}
+                                    <button onclick="clearExtraValues()" class="ml-auto text-sm font-bold text-gray-500 hover:text-gray-800 underline">모두 빼기</button>
+                                </div>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+        }
 
         window.toggleModeVisibility = () => {
             window.teacherState.isModeVisible = !window.teacherState.isModeVisible;
@@ -1407,6 +1565,7 @@
             const currentRound = globalGameState.round;
             const isRevealed = globalGameState.phase === 'revealed';
             const isGameStarted = globalGameState.isGameStarted;
+            if (!isRevealed && window.teacherState.extras.length) window.teacherState.extras = []; // 새 라운드·초기화 시 극단값 비우기
 
             let submissionsThisRound = [];
             let sum = 0;
@@ -1499,6 +1658,7 @@
                             </div>
                         </div>
                     </div>
+                    ${getDistributionPanel(validSubs.map(s => s.val))}
                 `;
             } else {
                 boardHTML = `
